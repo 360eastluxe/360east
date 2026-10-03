@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>360 EAST LUXE</title>
+<meta name="description" content="360 EAST — Project Management & Procurement">
+<meta name="theme-color" content="#1F3A5F">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="360 EAST">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  html, body { margin: 0; height: 100%; background: #0E1E36; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  #app { flex: 1; width: 100%; border: 0; background: #F4F6F9; display: block; }
+
+  /* Opening screen */
+  .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; color: #E9D6A0; padding: 24px; box-sizing: border-box;
+    background: radial-gradient(circle at 50% 40%, #1E3A64 0%, #14294A 55%, #0B1830 100%); transition: opacity .35s; }
+  .screen.gone { opacity: 0; pointer-events: none; }
+  .screen img { width: min(220px, 55vw); height: auto; }
+  .screen .name { margin-top: 18px; font-size: 15px; letter-spacing: 6px; color: #D9BB72; }
+  .screen .sub { margin-top: 6px; font-size: 12px; letter-spacing: 1px; color: #9FB0C8; }
+  .screen .status { margin-top: 34px; font-size: 13px; color: #9FB0C8; min-height: 18px; }
+  .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 3px; border-radius: 50%; background: #D4AF5A;
+    animation: blink 1.2s infinite both; }
+  .dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+  .gbtn { margin-top: 16px; background: linear-gradient(135deg, #F3DFA2, #C9A24E); color: #14294A; border: 0;
+    border-radius: 6px; padding: 11px 22px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .hidden { display: none !important; }
+
+  /* Install strip (only shown in the browser, never inside the installed app) */
+  #install { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: #14294A; color: #fff; font-size: 13px; border-top: 1px solid #C9A24E; }
+  #install img { width: 32px; height: 32px; border-radius: 7px; }
+  #install .t { flex: 1; line-height: 1.3; }
+  #install .t b { color: #E9D6A0; }
+  #install button { border: 0; border-radius: 5px; padding: 8px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #instGo { background: linear-gradient(135deg, #F3DFA2, #C9A24E); color: #14294A; }
+  #instX { background: transparent; color: #9FB0C8; font-size: 18px !important; padding: 4px 6px !important; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <iframe id="app" title="360 EAST" allow="clipboard-write; clipboard-read; camera; fullscreen"></iframe>
+  <div id="install" class="hidden">
+    <img src="icons/icon-192.png" alt="">
+    <div class="t"><b>Install the 360 EAST app</b><br><span id="instHow">Opens full-screen from your home screen.</span></div>
+    <button id="instGo">Install</button>
+    <button id="instX" aria-label="Close">✕</button>
+  </div>
+</div>
+
+<div id="splash" class="screen">
+  <img src="icons/logo-full.png" alt="360 EAST LUXE">
+  <div class="name">360 EAST LUXE</div>
+  <div class="sub">Project Management &amp; Procurement</div>
+  <div class="status" id="status"><span class="dots"><span></span><span></span><span></span></span></div>
+  <button class="gbtn hidden" id="retry">Try again</button>
+</div>
+
+<script>
+// =====================================================================
+// THE ONLY LINE YOU EVER NEED TO EDIT:
+// paste your Apps Script web-app link (the one ending in /exec) between the quotes.
+var APP_URL = 'PASTE_YOUR_APP_LINK_HERE';
+// =====================================================================
+
+var frame = document.getElementById('app');
+var splash = document.getElementById('splash');
+var statusEl = document.getElementById('status');
+var retryBtn = document.getElementById('retry');
+var slowTimer = null, loaded = false;
+
+function say(html, showRetry) {
+  statusEl.innerHTML = html;
+  retryBtn.classList.toggle('hidden', !showRetry);
+  splash.classList.remove('gone');
+}
+
+function openApp() {
+  if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(APP_URL)) {
+    return say('Setup not finished: the app link has not been added to index.html yet.', false);
+  }
+  if (!navigator.onLine) return say('No internet connection.<br>Connect to mobile data or Wi-Fi.', true);
+  loaded = false;
+  say('<span class="dots"><span></span><span></span><span></span></span>', false);
+  clearTimeout(slowTimer);
+  slowTimer = setTimeout(function () {
+    if (!loaded) say('Still opening… the connection seems slow.', true);
+  }, 25000);
+  frame.src = APP_URL;
+}
+
+frame.addEventListener('load', function () {
+  if (!frame.getAttribute('src')) return;
+  loaded = true; clearTimeout(slowTimer);
+  setTimeout(function () { splash.classList.add('gone'); }, 250);
+});
+retryBtn.addEventListener('click', openApp);
+window.addEventListener('offline', function () { if (!loaded) say('No internet connection.', true); });
+window.addEventListener('online', function () { if (!loaded) openApp(); });
+
+openApp();
+
+// ---- Offline support for this small shell (the app itself always needs internet) ----
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+
+// ---- "Install" strip: only in the browser, never inside the installed app ----
+(function () {
+  var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  if (standalone) return;
+  var bar = document.getElementById('install'), how = document.getElementById('instHow'), go = document.getElementById('instGo');
+  var KEY = '360e_install_dismissed', deferred = null;
+  var dismissed = false;
+  try { dismissed = localStorage.getItem(KEY) === '1'; } catch (e) {}
+  if (dismissed) return;
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); deferred = e;
+    how.textContent = 'Opens full-screen from your apps list.';
+    go.classList.remove('hidden'); bar.classList.remove('hidden');
+  });
+  window.addEventListener('appinstalled', function () { bar.classList.add('hidden'); });
+
+  // If Chrome hasn't offered the one-tap install after a few seconds, show the manual way.
+  setTimeout(function () {
+    if (deferred) return;
+    var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    how.innerHTML = ios ? 'Tap <b>Share</b> → <b>Add to Home Screen</b>.' : 'Tap <b>⋮</b> (top right) → <b>Install app</b> or <b>Add to Home screen</b>.';
+    go.classList.add('hidden'); bar.classList.remove('hidden');
+  }, 4000);
+
+  go.addEventListener('click', function () {
+    if (!deferred) return;
+    deferred.prompt();
+    deferred.userChoice.then(function () { deferred = null; bar.classList.add('hidden'); });
+  });
+  document.getElementById('instX').addEventListener('click', function () {
+    bar.classList.add('hidden');
+    try { localStorage.setItem(KEY, '1'); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>
