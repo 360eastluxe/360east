@@ -34,6 +34,9 @@
   @keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
   .gbtn { margin-top: 16px; background: linear-gradient(135deg, #F3DFA2, #C9A24E); color: #14294A; border: 0;
     border-radius: 6px; padding: 11px 22px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .lbtn { margin-top: 14px; background: transparent; color: #9FB0C8; border: 0; font-size: 13px;
+    text-decoration: underline; cursor: pointer; padding: 8px; }
+  #lock, #setup { z-index: 20; }
   .hidden { display: none !important; }
 
   /* Install strip (only shown in the browser, never inside the installed app) */
@@ -64,6 +67,24 @@
   <div class="sub">Project Management &amp; Procurement</div>
   <div class="status" id="status"><span class="dots"><span></span><span></span><span></span></span></div>
   <button class="gbtn hidden" id="retry">Try again</button>
+</div>
+
+<div id="lock" class="screen hidden">
+  <img src="icons/logo-full.png" alt="360 EAST LUXE">
+  <div class="name">360 EAST LUXE</div>
+  <div class="sub" id="lockText">Unlock with your fingerprint or face</div>
+  <button class="gbtn" id="lockGo">🔒 Unlock</button>
+  <button class="lbtn" id="lockPw">Use password instead</button>
+</div>
+
+<div id="setup" class="screen hidden">
+  <img src="icons/logo-full.png" alt="360 EAST LUXE">
+  <div class="name">FINGERPRINT / FACE UNLOCK</div>
+  <div class="sub" style="max-width:320px;line-height:1.5">The app will ask for your fingerprint or face each time it opens.
+    Your fingerprint never leaves this phone.</div>
+  <button class="gbtn" id="setupGo">Turn on</button>
+  <button class="lbtn" id="setupNo">Not now</button>
+  <div class="status" id="setupMsg"></div>
 </div>
 
 <script>
@@ -108,7 +129,120 @@ retryBtn.addEventListener('click', openApp);
 window.addEventListener('offline', function () { if (!loaded) say('No internet connection.', true); });
 window.addEventListener('online', function () { if (!loaded) openApp(); });
 
-openApp();
+// =====================================================================
+// STAY LOGGED IN + FINGERPRINT / FACE LOCK
+// The app inside the frame keeps its login here (this page's storage is not wiped by the phone),
+// and this page can ask for the fingerprint / face before showing the app.
+// =====================================================================
+var TOKEN_KEY = '360e_token', LOCK_KEY = '360e_lock', RELOCK_MIN = 10;
+function store(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
+function read(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function lockId() { return read(LOCK_KEY); }
+var hasWebAuthn = !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+var lockAvailable = Promise.resolve(false);
+if (hasWebAuthn && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+  lockAvailable = PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(function () { return false; });
+}
+function b64u(buf) {
+  var s = '', b = new Uint8Array(buf);
+  for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function unb64u(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/'); while (str.length % 4) str += '=';
+  var s = atob(str), b = new Uint8Array(s.length);
+  for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+  return b;
+}
+function rnd(n) { var b = new Uint8Array(n); crypto.getRandomValues(b); return b; }
+
+// ---- messages from the app inside the frame (only Google's app frame is answered) ----
+var setupReply = null;
+window.addEventListener('message', function (ev) {
+  if (!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(ev.origin)) return;
+  var m = ev.data || {};
+  function reply(o) { o.id = m.id; try { ev.source.postMessage(o, ev.origin); } catch (e) {} }
+  if (m.type === '360e-save') { store(TOKEN_KEY, m.token || ''); if (!m.token) store(LOCK_KEY, ''); }
+  else if (m.type === '360e-get') reply({ token: read(TOKEN_KEY) });
+  else if (m.type === '360e-hello') lockAvailable.then(function (ok) { reply({ lockAvailable: !!ok, lockOn: !!lockId() }); });
+  else if (m.type === '360e-lock-off') { store(LOCK_KEY, ''); reply({ ok: true }); }
+  else if (m.type === '360e-lock-setup') {
+    setupReply = reply;
+    document.getElementById('setupMsg').textContent = '';
+    document.getElementById('setup').classList.remove('hidden');
+    setupUser = m.name || '360 EAST user';
+  }
+});
+
+var setupUser = '';
+function closeSetup(result) {
+  document.getElementById('setup').classList.add('hidden');
+  if (setupReply) setupReply(result); setupReply = null;
+}
+document.getElementById('setupNo').addEventListener('click', function () { closeSetup({ ok: false }); });
+document.getElementById('setupGo').addEventListener('click', function () {
+  var msg = document.getElementById('setupMsg');
+  msg.textContent = 'Touch the fingerprint sensor or look at the phone…';
+  navigator.credentials.create({ publicKey: {
+    challenge: rnd(32),
+    rp: { name: '360 EAST' },
+    user: { id: rnd(16), name: setupUser, displayName: setupUser },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    timeout: 60000, attestation: 'none'
+  } }).then(function (cred) {
+    store(LOCK_KEY, b64u(cred.rawId));
+    closeSetup({ ok: true });
+  }).catch(function (e) {
+    msg.textContent = 'Not turned on (' + (e && e.name === 'NotAllowedError' ? 'cancelled' : (e && e.message || 'error')) + '). Try again or tap Not now.';
+  });
+});
+
+// ---- lock screen ----
+var lockEl = document.getElementById('lock'), lockText = document.getElementById('lockText');
+var unlocked = false, unlocking = false;
+function askFinger() {
+  if (unlocking) return; unlocking = true;
+  lockText.textContent = 'Unlock with your fingerprint or face';
+  navigator.credentials.get({ publicKey: {
+    challenge: rnd(32),
+    allowCredentials: [{ type: 'public-key', id: unb64u(lockId()), transports: ['internal'] }],
+    userVerification: 'required', timeout: 60000
+  } }).then(function () {
+    unlocking = false; unlocked = true;
+    lockEl.classList.add('hidden');
+    if (!frame.getAttribute('src')) openApp();
+  }).catch(function () {
+    unlocking = false;
+    lockText.textContent = 'Not unlocked. Tap Unlock to try again.';
+  });
+}
+function showLock() {
+  unlocked = false;
+  lockEl.classList.remove('hidden');
+  askFinger();
+}
+document.getElementById('lockGo').addEventListener('click', askFinger);
+document.getElementById('lockPw').addEventListener('click', function () {
+  // Forget this phone's login and the lock; the app opens on the login page.
+  store(TOKEN_KEY, ''); store(LOCK_KEY, '');
+  unlocked = true; lockEl.classList.add('hidden');
+  if (frame.getAttribute('src')) frame.src = APP_URL; else openApp();
+});
+
+// Lock again when the app comes back after being in the background for a while.
+var hiddenAt = 0;
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (lockId() && read(TOKEN_KEY) && hiddenAt && Date.now() - hiddenAt > RELOCK_MIN * 60000) showLock();
+});
+
+if (lockId() && read(TOKEN_KEY) && hasWebAuthn) {
+  splash.classList.add('gone');
+  showLock();
+} else {
+  openApp();
+}
 
 // ---- Offline support for this small shell (the app itself always needs internet) ----
 if ('serviceWorker' in navigator) {
