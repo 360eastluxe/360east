@@ -158,10 +158,22 @@ function rnd(n) { var b = new Uint8Array(n); crypto.getRandomValues(b); return b
 
 // ---- messages from the app inside the frame (only Google's app frame is answered) ----
 var setupReply = null;
+// Only windows inside our own app frame are answered (checked by walking the frame tree).
+function fromOurFrame(src) {
+  function walk(w, depth) {
+    if (!w || depth > 6) return false;
+    if (w === src) return true;
+    try { for (var i = 0; i < w.frames.length; i++) if (walk(w.frames[i], depth + 1)) return true; } catch (e) {}
+    return false;
+  }
+  return !!src && walk(frame.contentWindow, 0);
+}
 window.addEventListener('message', function (ev) {
-  if (!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(ev.origin)) return;
   var m = ev.data || {};
-  function reply(o) { o.id = m.id; try { ev.source.postMessage(o, ev.origin); } catch (e) {} }
+  if (typeof m !== 'object' || String(m.type || '').indexOf('360e-') !== 0) return;
+  if (!fromOurFrame(ev.source)) return;
+  var target = /^https:\/\//.test(ev.origin) ? ev.origin : '*';   // the reply goes only to that one window
+  function reply(o) { o.id = m.id; o.shell = 'v1.4b'; try { ev.source.postMessage(o, target); } catch (e) {} }
   if (m.type === '360e-save') { store(TOKEN_KEY, m.token || ''); if (!m.token) store(LOCK_KEY, ''); }
   else if (m.type === '360e-get') reply({ token: read(TOKEN_KEY) });
   else if (m.type === '360e-hello') lockAvailable.then(function (ok) { reply({ lockAvailable: !!ok, lockOn: !!lockId() }); });
